@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>WebGL Lighting</title>
+<style>
+  canvas { width: 100%; height: 100vh; display: block; }
+  .ui { position:absolute; top:10px; left:10px; background:white; padding:10px;}
+</style>
+</head>
+
+<body>
+<div class="ui">
+Linear <input type="range" id="linear" min="0" max="1" step="0.01" value="0.1"><br>
+Quadratic <input type="range" id="quadratic" min="0" max="1" step="0.01" value="0.01"><br>
+Ambient <input type="range" id="ambient" min="0" max="1" step="0.01" value="0.2"><br>
+
+Shading:
+<select id="shading">
+  <option value="gouraud">Gouraud</option>
+  <option value="phong">Phong</option>
+</select><br>
+
+Model:
+<select id="model">
+  <option value="lambert">Lambert</option>
+  <option value="phong">Phong</option>
+  <option value="blinn">Blinn-Phong</option>
+  <option value="toon">Toon</option>
+</select>
+</div>
+
+<canvas id="glcanvas"></canvas>
+
+<script src="objLoader.js"></script>
+<script src="shaders.js"></script>
+<script type="module" src="script.js"></script>
+</body>
+</html>
