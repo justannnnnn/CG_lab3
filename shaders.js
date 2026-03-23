@@ -1,4 +1,4 @@
-const gouraudVS = `
+export const gouraudVS = `
 attribute vec3 aVertexPosition;
 attribute vec3 aVertexNormal;
 
@@ -63,7 +63,7 @@ gl_Position = uPMatrix * vertexPositionEye4;
 }
 `;
 
-const gouraudFS = `
+export const gouraudFS = `
 precision mediump float;
 varying vec3 vLightWeighting;
 void main(void){
@@ -71,7 +71,7 @@ gl_FragColor = vec4(vLightWeighting,1.0);
 }
 `;
 
-const phongVS = `
+export const phongVS = `
 attribute vec3 aVertexPosition;
 attribute vec3 aVertexNormal;
 
@@ -90,7 +90,7 @@ gl_Position = uPMatrix * pos;
 }
 `;
 
-const phongFS = `
+export const phongFS = `
 precision mediump float;
 
 varying vec3 vNormal;

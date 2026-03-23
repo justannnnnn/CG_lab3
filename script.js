@@ -1,7 +1,11 @@
-import { mat4, mat3 } from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
+// script.js (фрагмент — замените существующий файл на этот)
+import { mat4, mat3,vec4} from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
+import { loadOBJ } from "./objLoader.js"; // наш исправленный loader
+import { gouraudVS, gouraudFS, phongVS, phongFS } from "./shaders.js";
 
 let gl;
-let shaderProgram;
+let gouraudProgram = null;
+let phongProgram = null;
 let objects = [];
 
 let mvMatrix = mat4.create();
@@ -9,128 +13,142 @@ let pMatrix = mat4.create();
 let nMatrix = mat3.create();
 let viewMatrix = mat4.create();
 
-async function init() {
-
-    const canvas = document.getElementById("glcanvas");
-    gl = canvas.getContext("webgl");
-    gl.enable(gl.DEPTH_TEST);
-
-    await loadScene();
-
-    render();
+function resizeCanvas() {
+    const canvas = gl.canvas;
+    const dpr = window.devicePixelRatio || 1;
+    const width = Math.floor(canvas.clientWidth * dpr);
+    const height = Math.floor(canvas.clientHeight * dpr);
+    if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        gl.viewport(0, 0, width, height);
+    }
 }
 
 function compileShader(source, type) {
-
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        console.error("Shader compile error:",
-            gl.getShaderInfoLog(shader));
+        console.error("Shader compile error:", gl.getShaderInfoLog(shader));
         gl.deleteShader(shader);
         return null;
     }
-
     return shader;
 }
 
-function initShaders(vertexSource, fragmentSource) {
-
-    const vertexShader = compileShader(vertexSource, gl.VERTEX_SHADER);
-    const fragmentShader = compileShader(fragmentSource, gl.FRAGMENT_SHADER);
-
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error("Shader link error:",
-            gl.getProgramInfoLog(program));
+function initShadersProgram(vertexSource, fragmentSource) {
+    const v = compileShader(vertexSource, gl.VERTEX_SHADER);
+    const f = compileShader(fragmentSource, gl.FRAGMENT_SHADER);
+    const p = gl.createProgram();
+    gl.attachShader(p, v);
+    gl.attachShader(p, f);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        console.error("Program link error:", gl.getProgramInfoLog(p));
         return null;
     }
-
-    return program;
+    return p;
 }
 
-async function loadScene() {
+async function init() {
+    const canvas = document.getElementById("glcanvas");
+    gl = canvas.getContext("webgl");
+    if (!gl) { alert("WebGL не поддерживается"); return; }
+    gl.enable(gl.DEPTH_TEST);
 
-    let snowman = await loadOBJ(gl, "snowman.obj");
-    let model2 = await loadOBJ(gl, "teamugobj.obj");
-    let model3 = await loadOBJ(gl, "FinalBaseMesh.obj");
+    // создаём программы один раз
+    gouraudProgram = initShadersProgram(gouraudVS, gouraudFS);
+    phongProgram = initShadersProgram(phongVS, phongFS);
 
-    // Масштабируем все объекты
-    const scaleSnowman = 2.0;
-    const scaleMug = 2.0;
-    const scaleBase = 0.5; // сильно уменьшить FinalBaseMesh
-
-    snowman.position = [-2, 0, -8];
-    model2.position = [2, 0, -8];
-    model3.position = [0, 0, -8];
-
-    snowman.scale = scaleSnowman;
-    model2.scale = scaleMug;
-    model3.scale = scaleBase;
-
-    objects.push(snowman, model2, model3);
-}
-
-function render() {
-
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    let shading = document.getElementById("shading").value;
-
-    if (shading === "gouraud")
-        shaderProgram = initShaders(gouraudVS, gouraudFS);
-    else
-        shaderProgram = initShaders(phongVS, phongFS);
-
-    gl.useProgram(shaderProgram);
-
-    mat4.perspective(pMatrix, 1.04, gl.canvas.width / gl.canvas.height, 0.1, 100);
-    gl.uniformMatrix4fv(gl.getUniformLocation(shaderProgram, "uPMatrix"), false, pMatrix);
-
-    setupLights();
-
-    mat4.identity(viewMatrix);
-    mat4.translate(viewMatrix, viewMatrix, [0, 0, -10]); // камера назад
-
-    objects.forEach(obj => {
-        drawObject(obj);
-    });
-
+    await loadScene();
     requestAnimationFrame(render);
 }
 
-function drawObject(obj) {
-    // mvMatrix = viewMatrix * modelMatrix
-    let modelMatrix = mat4.create();
+async function loadScene() {
+    const sphere = createSphere(gl, 40, 40, 2);
+
+    sphere.position = [0, 0, -8];
+    sphere.scale = 1.0;
+
+    objects.push(sphere);
+}
+
+function setupLightsAndUniforms(program) {
+    const lightWorld = [0, 5, 5];
+
+    // ✅ правильное преобразование
+    const lightEye4 = vec4.transformMat4([], [...lightWorld, 1.0], viewMatrix);
+    const lightEye = [lightEye4[0], lightEye4[1], lightEye4[2]];
+
+    gl.uniform3fv(gl.getUniformLocation(program, "uLightPosition"), lightEye);
+
+    // ambient
+    const ambientVal = parseFloat(document.getElementById("ambient").value);
+    gl.uniform3fv(
+        gl.getUniformLocation(program, "uAmbientLightColor"),
+        [ambientVal, ambientVal, ambientVal]
+    );
+
+    // diffuse / specular
+    gl.uniform3fv(gl.getUniformLocation(program, "uDiffuseLightColor"), [0.7, 0.7, 0.7]);
+    gl.uniform3fv(gl.getUniformLocation(program, "uSpecularLightColor"), [1, 1, 1]);
+
+    // attenuation
+    gl.uniform1f(
+        gl.getUniformLocation(program, "uLinear"),
+        parseFloat(document.getElementById("linear").value)
+    );
+
+    gl.uniform1f(
+        gl.getUniformLocation(program, "uQuadratic"),
+        parseFloat(document.getElementById("quadratic").value)
+    );
+
+    // модель освещения
+    const modelMap = { lambert: 0, phong: 1, blinn: 2, toon: 3 };
+    gl.uniform1i(
+        gl.getUniformLocation(program, "uLightingModel"),
+        modelMap[document.getElementById("model").value]
+    );
+
+    // ✅ камера (важно для specular)
+    gl.uniform3fv(
+        gl.getUniformLocation(program, "uViewPosition"),
+        [0, 0, 0]
+    );
+
+    // ✅ цвет объекта
+    gl.uniform3fv(
+        gl.getUniformLocation(program, "uObjectColor"),
+        [1.0, 0.5, 0.3]
+    );
+}
+
+function drawObject(program, obj) {
+    // modelMatrix
+    const modelMatrix = mat4.create();
     mat4.translate(modelMatrix, modelMatrix, obj.position);
     const s = obj.scale || 1.0;
     mat4.scale(modelMatrix, modelMatrix, [s, s, s]);
 
+    // mvMatrix = view * model
     mat4.mul(mvMatrix, viewMatrix, modelMatrix);
 
-    gl.uniformMatrix4fv(
-        gl.getUniformLocation(shaderProgram, "uMVMatrix"),
-        false,
-        mvMatrix
-    );
+    gl.uniformMatrix4fv(gl.getUniformLocation(program, "uMVMatrix"), false, mvMatrix);
 
-    // нормали берём из модели без view, только модельные трансформации
-    mat3.normalFromMat4(nMatrix, modelMatrix);
-    gl.uniformMatrix3fv(gl.getUniformLocation(shaderProgram, "uNMatrix"), false, nMatrix);
+    // normal matrix must come from mvMatrix
+    mat3.normalFromMat4(nMatrix, mvMatrix);
+    gl.uniformMatrix3fv(gl.getUniformLocation(program, "uNMatrix"), false, nMatrix);
 
-    const posLoc = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+    gl.uniformMatrix4fv(gl.getUniformLocation(program, "uPMatrix"), false, pMatrix);
+
+    const posLoc = gl.getAttribLocation(program, "aVertexPosition");
     gl.bindBuffer(gl.ARRAY_BUFFER, obj.positionBuffer);
     gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(posLoc);
 
-    const normLoc = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+    const normLoc = gl.getAttribLocation(program, "aVertexNormal");
     gl.bindBuffer(gl.ARRAY_BUFFER, obj.normalBuffer);
     gl.vertexAttribPointer(normLoc, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(normLoc);
@@ -138,31 +156,98 @@ function drawObject(obj) {
     gl.drawArrays(gl.TRIANGLES, 0, obj.vertexCount);
 }
 
-function setupLights() {
+function render() {
+    resizeCanvas();
 
-    gl.uniform3fv(gl.getUniformLocation(shaderProgram, "uLightPosition"), [0, 5, 5]);
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    let ambientVal = parseFloat(document.getElementById("ambient").value);
+    // выбор шейдера
+    const shading = document.getElementById("shading").value;
+    const program = (shading === "gouraud") ? gouraudProgram : phongProgram;
+    gl.useProgram(program);
 
-    gl.uniform3fv(gl.getUniformLocation(shaderProgram, "uAmbientLightColor"),
-        [ambientVal, ambientVal, ambientVal]);
+    // projection
+    const aspect = gl.canvas.width / gl.canvas.height;
+    mat4.perspective(pMatrix, 1.04, aspect, 0.1, 100);
 
-    gl.uniform3fv(gl.getUniformLocation(shaderProgram, "uDiffuseLightColor"),
-        [0.7, 0.7, 0.7]);
+    // view (камера)
+    mat4.identity(viewMatrix);
+    mat4.translate(viewMatrix, viewMatrix, [0, 0, -10]);
 
-    gl.uniform3fv(gl.getUniformLocation(shaderProgram, "uSpecularLightColor"),
-        [1, 1, 1]);
+    setupLightsAndUniforms(program);
 
-    gl.uniform1f(gl.getUniformLocation(shaderProgram, "uLinear"),
-        parseFloat(document.getElementById("linear").value));
+    for (const obj of objects) {
+        drawObject(program, obj);
+    }
 
-    gl.uniform1f(gl.getUniformLocation(shaderProgram, "uQuadratic"),
-        parseFloat(document.getElementById("quadratic").value));
+    requestAnimationFrame(render);
+}
 
-    let modelMap = { lambert: 0, phong: 1, blinn: 2, toon: 3 };
+function createSphere(gl, latBands = 30, longBands = 30, radius = 1) {
+    const positions = [];
+    const normals = [];
 
-    gl.uniform1i(gl.getUniformLocation(shaderProgram, "uLightingModel"),
-        modelMap[document.getElementById("model").value]);
+    for (let lat = 0; lat <= latBands; lat++) {
+        const theta = lat * Math.PI / latBands;
+        const sinTheta = Math.sin(theta);
+        const cosTheta = Math.cos(theta);
+
+        for (let lon = 0; lon <= longBands; lon++) {
+            const phi = lon * 2 * Math.PI / longBands;
+            const sinPhi = Math.sin(phi);
+            const cosPhi = Math.cos(phi);
+
+            const x = cosPhi * sinTheta;
+            const y = cosTheta;
+            const z = sinPhi * sinTheta;
+
+            normals.push(x, y, z);
+            positions.push(radius * x, radius * y, radius * z);
+        }
+    }
+
+    const vertices = [];
+    const vertexNormals = [];
+
+    for (let lat = 0; lat < latBands; lat++) {
+        for (let lon = 0; lon < longBands; lon++) {
+            const first = lat * (longBands + 1) + lon;
+            const second = first + longBands + 1;
+
+            const indices = [
+                first, second, first + 1,
+                second, second + 1, first + 1
+            ];
+
+            for (let i of indices) {
+                vertices.push(
+                    positions[3 * i],
+                    positions[3 * i + 1],
+                    positions[3 * i + 2]
+                );
+                vertexNormals.push(
+                    normals[3 * i],
+                    normals[3 * i + 1],
+                    normals[3 * i + 2]
+                );
+            }
+        }
+    }
+
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+    const normalBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+
+    return {
+        positionBuffer,
+        normalBuffer,
+        vertexCount: vertices.length / 3
+    };
 }
 
 init();
