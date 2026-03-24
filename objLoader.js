@@ -1,4 +1,3 @@
-// objLoader.js — исправленный загрузчик
 export async function loadOBJ(gl, url) {
     const response = await fetch(url);
     const text = await response.text();
@@ -30,7 +29,6 @@ export async function loadOBJ(gl, url) {
         } else if (parts[0] === "vt") {
             tempUVs.push([parseFloat(parts[1]), parseFloat(parts[2])]);
         } else if (parts[0] === "f") {
-            // triangulate polygon by fan
             const tokens = parts.slice(1);
             for (let i = 1; i < tokens.length - 1; i++) {
                 const tri = [tokens[0], tokens[i], tokens[i + 1]];
@@ -47,7 +45,6 @@ export async function loadOBJ(gl, url) {
                         const n = tempNormals[vnIdx];
                         outNormals.push(n[0], n[1], n[2]);
                     } else {
-                        // placeholder, будем вычислять позже
                         outNormals.push(0, 0, 0);
                     }
 
@@ -62,7 +59,6 @@ export async function loadOBJ(gl, url) {
         }
     }
 
-    // если нормали нулевые — вычислить face normals и аккумулировать
     let needNormals = false;
     for (let i = 0; i < outNormals.length; i++) {
         if (outNormals[i] !== 0) { needNormals = false; break; }
@@ -70,14 +66,12 @@ export async function loadOBJ(gl, url) {
     }
 
     if (needNormals) {
-        // zero accum arrays
         const accum = new Float32Array(outNormals.length);
         for (let i = 0; i < outPositions.length; i += 9) {
             const v0 = [outPositions[i], outPositions[i + 1], outPositions[i + 2]];
             const v1 = [outPositions[i + 3], outPositions[i + 4], outPositions[i + 5]];
             const v2 = [outPositions[i + 6], outPositions[i + 7], outPositions[i + 8]];
 
-            // compute face normal
             const ux = v1[0] - v0[0], uy = v1[1] - v0[1], uz = v1[2] - v0[2];
             const vx = v2[0] - v0[0], vy = v2[1] - v0[1], vz = v2[2] - v0[2];
             let nx = uy * vz - uz * vy;
@@ -86,13 +80,11 @@ export async function loadOBJ(gl, url) {
             const len = Math.hypot(nx, ny, nz) || 1.0;
             nx /= len; ny /= len; nz /= len;
 
-            // add to accum for each of three vertices
             for (let j = 0; j < 3; j++) {
                 const off = i + j * 3;
                 accum[off] += nx; accum[off + 1] += ny; accum[off + 2] += nz;
             }
         }
-        // normalize accum into outNormals
         for (let i = 0; i < accum.length; i += 3) {
             const nx = accum[i], ny = accum[i + 1], nz = accum[i + 2];
             const l = Math.hypot(nx, ny, nz) || 1.0;

@@ -137,6 +137,75 @@ if(uLightingModel == 3){
     else lambertTerm = 0.2;
     diffuse = uDiffuseLightColor * lambertTerm;
 }
+if(uLightingModel == 4){
+    vec3 viewDir = normalize(-vPosition);
+    vec3 h = normalize(lightDir + viewDir);
+
+    float hn = max(dot(normal, h), 0.0001);
+    float hn2 = hn * hn;
+
+    float k = 10.0;
+    float spec = exp(-k * (1.0 - hn2) / hn2);
+
+    specular = uSpecularLightColor * spec;
+}
+if(uLightingModel == 5){
+    vec3 viewDir = normalize(-vPosition);
+
+    float nl = max(dot(normal, lightDir), 0.0);
+    float nv = max(dot(normal, viewDir), 0.0);
+
+    vec3 lProj = normalize(lightDir - normal * nl);
+    vec3 vProj = normalize(viewDir - normal * nv);
+
+    float cx = max(dot(lProj, vProj), 0.0);
+
+    float cosAlpha = max(nl, nv);
+    float cosBeta  = min(nl, nv);
+
+    float dx = sqrt((1.0 - cosAlpha*cosAlpha)*(1.0 - cosBeta*cosBeta)) / max(cosBeta, 0.001);
+
+    float a = 0.7;
+    float b = 0.3;
+
+    diffuse = uDiffuseLightColor * nl * (a + b * cx * dx);
+}
+if(uLightingModel == 6){
+    vec3 viewDir = normalize(-vPosition);
+    vec3 h = normalize(lightDir + viewDir);
+
+    float nl = max(dot(normal, lightDir), 0.0);
+    float nv = max(dot(normal, viewDir), 0.0);
+    float nh = max(dot(normal, h), 0.0);
+    float vh = max(dot(viewDir, h), 0.0);
+
+    float roughness = 0.5;
+    float r2 = roughness * roughness;
+
+    float nh2 = nh * nh;
+    float D = exp(-(1.0 - nh2)/(nh2 * r2)) / (r2 * nh2 * nh2 + 0.0001);
+
+    float F = pow(1.0 - nv, 5.0);
+    float k = roughness / 2.0;
+    float G = min(1.0, min((2.0*nh*nv)/vh, (2.0*nh*nl)/vh));
+
+    float spec = (D * F * G) / max(nv, 0.001);
+
+    specular = uSpecularLightColor * spec;
+}
+if(uLightingModel == 7){
+    vec3 viewDir = normalize(-vPosition);
+
+    float nl = max(dot(normal, lightDir), 0.0);
+    float nv = max(dot(normal, viewDir), 0.0);
+
+    float k = 0.8;
+
+    float d1 = pow(nl, 1.0 + k);
+    float d2 = pow(1.0 - nv, 1.0 - k);
+
+    diffuse = uDiffuseLightColor * d1 * d2;
+}
 
 float distance = length(uLightPosition - vPosition);
 float attenuation = 1.0 / (1.0 + uLinear*distance + uQuadratic*distance*distance);

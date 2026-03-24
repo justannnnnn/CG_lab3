@@ -1,6 +1,5 @@
-// script.js (фрагмент — замените существующий файл на этот)
 import { mat4, mat3,vec4} from "https://cdn.jsdelivr.net/npm/gl-matrix@3.4.3/esm/index.js";
-import { loadOBJ } from "./objLoader.js"; // наш исправленный loader
+import { loadOBJ } from "./objLoader.js"; 
 import { gouraudVS, gouraudFS, phongVS, phongFS } from "./shaders.js";
 
 let gl;
@@ -66,59 +65,63 @@ async function init() {
 }
 
 async function loadScene() {
-    const sphere = createSphere(gl, 40, 40, 2);
+    let snowman = await loadOBJ(gl, "snowman.obj");
+    let model2 = await loadOBJ(gl, "model2.obj");
+    let model3 = await loadOBJ(gl, "FinalBaseMesh.obj");
 
-    sphere.position = [0, 0, -8];
-    sphere.scale = 1.0;
+    model2.scale = 3.0;
 
-    objects.push(sphere);
+    snowman.position = [-10, 0, -8];
+    model2.position = [-2, 0, -10];
+    model3.position = [10, -10, -10]
+
+    objects.push(snowman, model2, model3);
 }
 
 function setupLightsAndUniforms(program) {
     const lightWorld = [0, 5, 5];
 
-    // ✅ правильное преобразование
     const lightEye4 = vec4.transformMat4([], [...lightWorld, 1.0], viewMatrix);
     const lightEye = [lightEye4[0], lightEye4[1], lightEye4[2]];
 
     gl.uniform3fv(gl.getUniformLocation(program, "uLightPosition"), lightEye);
 
-    // ambient
     const ambientVal = parseFloat(document.getElementById("ambient").value);
     gl.uniform3fv(
         gl.getUniformLocation(program, "uAmbientLightColor"),
         [ambientVal, ambientVal, ambientVal]
     );
 
-    // diffuse / specular
     gl.uniform3fv(gl.getUniformLocation(program, "uDiffuseLightColor"), [0.7, 0.7, 0.7]);
     gl.uniform3fv(gl.getUniformLocation(program, "uSpecularLightColor"), [1, 1, 1]);
 
-    // attenuation
-    gl.uniform1f(
-        gl.getUniformLocation(program, "uLinear"),
-        parseFloat(document.getElementById("linear").value)
-    );
+    const linearVal = 1.0 - parseFloat(document.getElementById("linear").value);
+    const quadVal = (1.0 - parseFloat(document.getElementById("quadratic").value));
 
-    gl.uniform1f(
-        gl.getUniformLocation(program, "uQuadratic"),
-        parseFloat(document.getElementById("quadratic").value)
-    );
+    gl.uniform1f(gl.getUniformLocation(program, "uLinear"), linearVal);
+    gl.uniform1f(gl.getUniformLocation(program, "uQuadratic"), quadVal);
 
-    // модель освещения
-    const modelMap = { lambert: 0, phong: 1, blinn: 2, toon: 3 };
+    const modelMap = {
+    lambert: 0,
+    phong: 1,
+    blinn: 2,
+    toon: 3,
+    ward: 4,
+    oren: 5,
+    cook: 6,
+    minnaert: 7
+    };
+    
     gl.uniform1i(
         gl.getUniformLocation(program, "uLightingModel"),
         modelMap[document.getElementById("model").value]
     );
 
-    // ✅ камера (важно для specular)
     gl.uniform3fv(
         gl.getUniformLocation(program, "uViewPosition"),
         [0, 0, 0]
     );
 
-    // ✅ цвет объекта
     gl.uniform3fv(
         gl.getUniformLocation(program, "uObjectColor"),
         [1.0, 0.5, 0.3]
@@ -126,18 +129,15 @@ function setupLightsAndUniforms(program) {
 }
 
 function drawObject(program, obj) {
-    // modelMatrix
     const modelMatrix = mat4.create();
     mat4.translate(modelMatrix, modelMatrix, obj.position);
     const s = obj.scale || 1.0;
     mat4.scale(modelMatrix, modelMatrix, [s, s, s]);
 
-    // mvMatrix = view * model
     mat4.mul(mvMatrix, viewMatrix, modelMatrix);
 
     gl.uniformMatrix4fv(gl.getUniformLocation(program, "uMVMatrix"), false, mvMatrix);
 
-    // normal matrix must come from mvMatrix
     mat3.normalFromMat4(nMatrix, mvMatrix);
     gl.uniformMatrix3fv(gl.getUniformLocation(program, "uNMatrix"), false, nMatrix);
 
@@ -162,16 +162,13 @@ function render() {
     gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // выбор шейдера
     const shading = document.getElementById("shading").value;
     const program = (shading === "gouraud") ? gouraudProgram : phongProgram;
     gl.useProgram(program);
 
-    // projection
     const aspect = gl.canvas.width / gl.canvas.height;
     mat4.perspective(pMatrix, 1.04, aspect, 0.1, 100);
 
-    // view (камера)
     mat4.identity(viewMatrix);
     mat4.translate(viewMatrix, viewMatrix, [0, 0, -10]);
 
@@ -182,72 +179,6 @@ function render() {
     }
 
     requestAnimationFrame(render);
-}
-
-function createSphere(gl, latBands = 30, longBands = 30, radius = 1) {
-    const positions = [];
-    const normals = [];
-
-    for (let lat = 0; lat <= latBands; lat++) {
-        const theta = lat * Math.PI / latBands;
-        const sinTheta = Math.sin(theta);
-        const cosTheta = Math.cos(theta);
-
-        for (let lon = 0; lon <= longBands; lon++) {
-            const phi = lon * 2 * Math.PI / longBands;
-            const sinPhi = Math.sin(phi);
-            const cosPhi = Math.cos(phi);
-
-            const x = cosPhi * sinTheta;
-            const y = cosTheta;
-            const z = sinPhi * sinTheta;
-
-            normals.push(x, y, z);
-            positions.push(radius * x, radius * y, radius * z);
-        }
-    }
-
-    const vertices = [];
-    const vertexNormals = [];
-
-    for (let lat = 0; lat < latBands; lat++) {
-        for (let lon = 0; lon < longBands; lon++) {
-            const first = lat * (longBands + 1) + lon;
-            const second = first + longBands + 1;
-
-            const indices = [
-                first, second, first + 1,
-                second, second + 1, first + 1
-            ];
-
-            for (let i of indices) {
-                vertices.push(
-                    positions[3 * i],
-                    positions[3 * i + 1],
-                    positions[3 * i + 2]
-                );
-                vertexNormals.push(
-                    normals[3 * i],
-                    normals[3 * i + 1],
-                    normals[3 * i + 2]
-                );
-            }
-        }
-    }
-
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-
-    const normalBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
-
-    return {
-        positionBuffer,
-        normalBuffer,
-        vertexCount: vertices.length / 3
-    };
 }
 
 init();
